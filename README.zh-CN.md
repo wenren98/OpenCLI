@@ -1,3 +1,5 @@
+<a href="https://trendshift.io/repositories/23541" target="_blank"><img src="https://trendshift.io/api/badge/repositories/23541" alt="jackwener%2FOpenCLI | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+
 # OpenCLI
 
 > **把任意网站变成 CLI & 在你的登录态浏览器上跑 Browser Use。**
