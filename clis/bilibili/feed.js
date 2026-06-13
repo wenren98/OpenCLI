@@ -73,12 +73,12 @@ cli({
         { name: 'uid', positional: true, required: false, help: '用户 UID 或用户名（不传则显示关注时间线）' },
         { name: 'limit', type: 'int', default: 20, help: 'Max results to return' },
         { name: 'type', default: 'all', help: 'Filter: all, video, article, draw, text' },
-        { name: 'pages', type: 'int', default: 1, help: 'Number of pages to fetch (each ~20 items)' },
+        { name: 'pages', type: 'int', default: 1, help: 'Page number (1-indexed, each page has --limit items)' },
     ],
     columns: ['rank', 'time', 'author', 'title', 'type', 'likes', 'url'],
     func: async (page, kwargs) => {
-        const maxResults = Number(kwargs.limit) || 20;
-        const maxPages = Number(kwargs.pages) || 1;
+        const pageSize = Number(kwargs.limit) || 20;
+        const pageNum = Number(kwargs.pages) || 1;
         const filterType = kwargs.type === 'all' ? '' : (kwargs.type ?? '');
 
         const isUserFeed = !!kwargs.uid;
@@ -86,22 +86,19 @@ cli({
 
         const rows = [];
         let offset = '';
+        let rank = 0;
 
-        for (let p = 0; p < maxPages; p++) {
-            if (rows.length >= maxResults) break;
+        for (let p = 1; p <= pageNum; p++) {
+            const isTargetPage = p === pageNum;
 
             let payload;
+            const params = { timezone_offset: -480 };
+            if (offset) params.offset = offset;
             if (isUserFeed) {
-                const params = { host_mid: uid, timezone_offset: -480 };
-                if (offset) params.offset = offset;
+                params.host_mid = uid;
                 payload = await apiGet(page, '/x/polymer/web-dynamic/v1/feed/space', { params });
             } else {
-                const params = {
-                    timezone_offset: -480,
-                    type: filterType || 'all',
-                    page: p + 1,
-                };
-                if (offset) params.offset = offset;
+                params.type = filterType || 'all';
                 payload = await apiGet(page, '/x/polymer/web-dynamic/v1/feed/all', { params });
             }
 
@@ -110,19 +107,23 @@ cli({
             if (items.length === 0) break;
 
             for (const item of items) {
-                if (rows.length >= maxResults) break;
                 const parsed = parseItem(item);
                 if (filterType && parsed.itemType !== filterType) continue;
-                rows.push({
-                    rank: rows.length + 1,
-                    time: parsed.time,
-                    author: parsed.author,
-                    title: parsed.title,
-                    type: parsed.itemType,
-                    likes: parsed.likes,
-                    url: parsed.url,
-                });
+                rank++;
+                if (isTargetPage && rows.length < pageSize) {
+                    rows.push({
+                        rank,
+                        time: parsed.time,
+                        author: parsed.author,
+                        title: parsed.title,
+                        type: parsed.itemType,
+                        likes: parsed.likes,
+                        url: parsed.url,
+                    });
+                }
             }
+
+            if (isTargetPage) break;
 
             offset = data.offset ?? items[items.length - 1]?.id_str ?? '';
             if (!offset || !data.has_more) break;

@@ -88,13 +88,13 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "@types/jsdom": "^27.0.0",
     "@types/js-yaml": "^4.0.9",
+    "@types/jsdom": "^27.0.0",
     "@types/node": "^25.5.2",
     "@types/turndown": "^5.0.6",
     "@types/ws": "^8.5.13",
     "jsdom": "^29.0.2",
-    "tsx": "^4.19.3",
+    "tsx": "^4.22.4",
     "typescript": "^6.0.2",
     "vitepress": "^1.6.4",
     "vitest": "^4.1.0"
