@@ -22,25 +22,21 @@ cli({
         const limit = kwargs.limit || 20;
         // 1. 导航到即刻首页，等待 SPA 重定向到 /following
         await page.goto('https://web.okjike.com');
-        // 2. 通过 React fiber 提取帖子数据
-        const extract = async () => {
-            return (await page.evaluate(`(() => {
+        await page.wait({ selector: '[class*="_post_"]', timeout: 10 });
+
+        // 2. 提取当前可见帖子（单次快照）
+        const extractVisible = () => page.evaluate(`(() => {
         ${getPostDataJs}
 
         const results = [];
-        const seen = new Set();
         const elements = document.querySelectorAll('[class*="_post_"]');
 
         for (const el of elements) {
           const data = getPostData(el);
-          if (!data || !data.id || seen.has(data.id)) continue;
-          seen.add(data.id);
+          if (!data || !data.id) continue;
 
-          // 转发帖的正文可能为空，取 target（原帖）的内容作 fallback
           const author = data.user?.screenName || data.target?.user?.screenName || '';
           const content = data.content || data.target?.content || '';
-
-          // 跳过无内容且无作者的条目（如 PERSONAL_UPDATE）
           if (!author && !content) continue;
 
           results.push({
@@ -55,14 +51,33 @@ cli({
         }
 
         return results;
-      })()`));
+      })()`);
+
+        // 3. 增量收集：滚动 + 提取，合并去重（即刻使用虚拟滚动，DOM 只保留可见帖子）
+        const allPosts = new Map();
+        const mergePosts = (posts) => {
+            for (const p of posts) {
+                if (!allPosts.has(p.id)) allPosts.set(p.id, p);
+            }
         };
-        let posts = await extract();
-        // 3. 如果数量不足，自动滚动加载更多
-        if (posts.length < limit) {
-            await page.autoScroll({ times: Math.ceil(limit / 10), delayMs: 2000 });
-            posts = await extract();
+
+        mergePosts(await extractVisible());
+
+        const maxScrolls = Math.max(5, Math.ceil(limit / 2));
+        for (let i = 0; i < maxScrolls && allPosts.size < limit; i++) {
+            const prevSize = allPosts.size;
+            // 滚动一屏（即刻用 Mantine ScrollArea，滚动容器不是 window）
+            await page.evaluate(`(() => {
+                const viewport = document.querySelector('.mantine-ScrollArea-viewport');
+                if (viewport) viewport.scrollBy(0, viewport.clientHeight);
+                else window.scrollTo(0, document.body.scrollHeight);
+            })()`);
+            await page.wait(3);
+            mergePosts(await extractVisible());
+            // 连续两次无新内容则停止
+            if (allPosts.size === prevSize && i > 0) break;
         }
-        return posts.slice(0, limit);
+
+        return Array.from(allPosts.values()).slice(0, limit);
     },
 });

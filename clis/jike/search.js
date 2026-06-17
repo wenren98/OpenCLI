@@ -25,19 +25,18 @@ cli({
         // 1. 直接导航到搜索页
         const encodedKeyword = encodeURIComponent(keyword);
         await page.goto(`https://web.okjike.com/search?q=${encodedKeyword}`);
-        // 2. 通过 React fiber 提取帖子数据
-        const extract = async () => {
-            return (await page.evaluate(`(() => {
+        await page.wait({ selector: '[class*="_post_"], [class*="_postItem_"]', timeout: 10 });
+
+        // 2. 提取当前可见帖子（单次快照）
+        const extractVisible = () => page.evaluate(`(() => {
         ${getPostDataJs}
 
         const results = [];
-        const seen = new Set();
         const elements = document.querySelectorAll('[class*="_post_"], [class*="_postItem_"]');
 
         for (const el of elements) {
           const data = getPostData(el);
-          if (!data || !data.id || seen.has(data.id)) continue;
-          seen.add(data.id);
+          if (!data || !data.id) continue;
 
           const author = data.user?.screenName || data.target?.user?.screenName || '';
           const content = data.content || data.target?.content || '';
@@ -55,14 +54,31 @@ cli({
         }
 
         return results;
-      })()`));
+      })()`);
+
+        // 3. 增量收集：滚动 + 提取，合并去重（即刻使用虚拟滚动）
+        const allPosts = new Map();
+        const mergePosts = (posts) => {
+            for (const p of posts) {
+                if (!allPosts.has(p.id)) allPosts.set(p.id, p);
+            }
         };
-        let posts = await extract();
-        // 3. 数量不足时自动滚动加载更多
-        if (posts.length < limit) {
-            await page.autoScroll({ times: Math.ceil(limit / 10), delayMs: 2000 });
-            posts = await extract();
+
+        mergePosts(await extractVisible());
+
+        const maxScrolls = Math.max(5, Math.ceil(limit / 2));
+        for (let i = 0; i < maxScrolls && allPosts.size < limit; i++) {
+            const prevSize = allPosts.size;
+            await page.evaluate(`(() => {
+                const viewport = document.querySelector('.mantine-ScrollArea-viewport');
+                if (viewport) viewport.scrollBy(0, viewport.clientHeight);
+                else window.scrollTo(0, document.body.scrollHeight);
+            })()`);
+            await page.wait(3);
+            mergePosts(await extractVisible());
+            if (allPosts.size === prevSize && i > 0) break;
         }
-        return posts.slice(0, limit);
+
+        return Array.from(allPosts.values()).slice(0, limit);
     },
 });
