@@ -63,19 +63,25 @@ cli({
 
         mergePosts(await extractVisible());
 
-        const maxScrolls = Math.max(5, Math.ceil(limit / 2));
+        const maxScrolls = Math.max(12, Math.ceil(limit / 2));
+        let staleCount = 0;
         for (let i = 0; i < maxScrolls && allPosts.size < limit; i++) {
             const prevSize = allPosts.size;
             // 滚动一屏（即刻用 Mantine ScrollArea，滚动容器不是 window）
             await page.evaluate(`(() => {
                 const viewport = document.querySelector('.mantine-ScrollArea-viewport');
-                if (viewport) viewport.scrollBy(0, viewport.clientHeight);
-                else window.scrollTo(0, document.body.scrollHeight);
+                if (viewport) {
+                    viewport.scrollBy(0, viewport.clientHeight);
+                    viewport.dispatchEvent(new Event('scroll', { bubbles: true }));
+                } else {
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
             })()`);
-            await page.wait(3);
+            await page.wait(5);
             mergePosts(await extractVisible());
-            // 连续两次无新内容则停止
-            if (allPosts.size === prevSize && i > 0) break;
+            // 连续五次无新内容则停止
+            if (allPosts.size === prevSize) { staleCount++; if (staleCount >= 5) break; }
+            else staleCount = 0;
         }
 
         return Array.from(allPosts.values()).slice(0, limit);
